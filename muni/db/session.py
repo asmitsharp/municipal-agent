@@ -42,3 +42,30 @@ def check_postgis(database_url: Optional[str] = None) -> str:
         version = connection.execute(text("SELECT postgis_version()")).scalar_one()
     return f"available: {version}"
 
+
+from contextlib import contextmanager
+from typing import Generator
+from sqlalchemy.orm import Session, sessionmaker
+
+_engine = None
+_sessionmaker = None
+
+def _get_or_create_engine() -> Engine:
+    global _engine
+    if _engine is None:
+        _engine = make_engine()
+    return _engine
+
+def _get_or_create_sessionmaker() -> sessionmaker:
+    global _sessionmaker
+    if _sessionmaker is None:
+        _sessionmaker = sessionmaker(bind=_get_or_create_engine())
+    return _sessionmaker
+
+@contextmanager
+def get_session() -> Generator[Session, None, None]:
+    session = _get_or_create_sessionmaker()()
+    try:
+        yield session
+    finally:
+        session.close()

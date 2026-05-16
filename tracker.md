@@ -8,7 +8,7 @@ This tracker should be updated whenever meaningful work is completed, blocked, o
 
 ## Current State
 
-- Project status: Phase 2 agent runtime foundation complete; Phase 3 not started.
+- Project status: Phase 3 local ingestion complete; web discovery crawler pending.
 - Primary implementation plan: `plan.md`.
 - Architecture source document: `project.md`.
 - Current product direction: city-agnostic municipal intelligence agent system with a Python CLI control surface.
@@ -144,21 +144,21 @@ Acceptance checkpoint:
 ### Phase 3 - Document Evidence Store and Local Ingestion
 
 - [ ] Add PDF link crawler for registered official sources.
-- [ ] Add manual local ingestion.
-- [ ] Add SHA-256 hashing.
-- [ ] Add duplicate detection by hash.
+- [x] Add manual local ingestion.
+- [x] Add SHA-256 hashing.
+- [x] Add duplicate detection by hash.
 - [ ] Add broken-link logging.
 - [ ] Add normalized filename generation.
 - [ ] Add `muni discover`.
-- [ ] Add `muni ingest`.
-- [ ] Add `muni docs list`.
-- [ ] Add `muni docs show`.
+- [x] Add `muni ingest`.
+- [x] Add `muni docs list`.
+- [x] Add `muni docs show`.
 
 Acceptance checkpoint:
 
 - [ ] Unknown domains rejected before download.
-- [ ] Duplicate documents skipped.
-- [ ] Every document stores source URL, local path, hash, and capture timestamp.
+- [x] Duplicate documents skipped.
+- [x] Every document stores source URL, local path, hash, and capture timestamp.
 
 ### Phase 4 - Document Classification
 
@@ -445,15 +445,24 @@ Acceptance checkpoint:
   - `python3 -m ruff check .`
   - Direct smoke test of `muni run all` through Typer runner.
 
+### 2026-05-17
+
+- Implemented Phase 3 document ingestion foundation:
+  - Added `Document` database model using SQLAlchemy.
+  - Generated and ran Alembic migration for `documents` table.
+  - Implemented `muni.documents.service` with SHA-256 hashing and local duplicate detection.
+  - Updated `muni ingest` CLI to support file and directory imports.
+  - Updated `muni docs list` and `muni docs show` CLI to display document metadata.
+  - Manually verified ingestion logic with dummy file test.
+
 ## Next Recommended Task
 
-Start Phase 3:
+Start Phase 3 Crawler:
 
-1. Add document metadata model or file-backed registry for the first ingestion pass.
-2. Implement local PDF ingestion under the DocumentDiscoveryAgent/domain service.
-3. Add SHA-256 hashing and exact duplicate detection.
-4. Implement `muni ingest --city <slug> --path ./data/raw/<slug>`.
-5. Add `muni docs list` and `muni docs show`.
-6. Add fixture-file tests before implementing web crawling.
+1. Add PDF link crawler for registered official sources.
+2. Implement `muni discover`.
+3. Integrate broken-link logging.
+4. Integrate normalized filename generation.
+5. Add fixture-file tests before implementing web crawling.
 
 Keep ingestion behind the agent architecture: CLI commands should call an agent or agent-owned service, not isolated one-off functions.

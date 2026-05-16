@@ -301,7 +301,28 @@ def discover(city: str = typer.Option(..., help="City slug.")) -> None:
 
 @app.command()
 def ingest(city: str = typer.Option(..., help="City slug."), path: Path = typer.Option(...)) -> None:
-    _placeholder(f"muni ingest --city {city} --path {path}")
+    from muni.documents.service import ingest_local_file, ingest_directory, DocumentError
+    from muni.cities.service import load_city_profile, CityProfileError
+    
+    try:
+        load_city_profile(city)
+    except CityProfileError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+        
+    try:
+        if path.is_file():
+            ingest_local_file(city, path)
+            console.print("[green]Ingested 1 document.[/green]")
+        elif path.is_dir():
+            ingested, skipped = ingest_directory(city, path)
+            console.print(f"[green]Ingested {ingested} documents. Skipped {skipped} duplicates.[/green]")
+        else:
+            console.print(f"[red]Path is not a file or directory: {path}[/red]")
+            raise typer.Exit(code=1)
+    except DocumentError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -331,12 +352,44 @@ def analyze(city: str = typer.Option(..., help="City slug."), years: str = typer
 
 @docs_app.command("list")
 def docs_list(city: str = typer.Option(..., help="City slug."), priority: Optional[str] = None) -> None:
-    _placeholder(f"muni docs list --city {city} --priority {priority}")
+    from muni.documents.service import list_documents
+    docs = list_documents(city)
+    
+    table = Table(title=f"Documents for {city}")
+    table.add_column("ID", style="bold")
+    table.add_column("Hash (short)")
+    table.add_column("Capture Time")
+    table.add_column("Source")
+    
+    for doc in docs:
+        table.add_row(
+            str(doc.id),
+            doc.file_hash[:8],
+            doc.capture_timestamp.strftime("%Y-%m-%d %H:%M:%S") if doc.capture_timestamp else "",
+            doc.source_url
+        )
+    console.print(table)
 
 
 @docs_app.command("show")
-def docs_show(doc_id: str) -> None:
-    _placeholder(f"muni docs show {doc_id}")
+def docs_show(doc_id: int) -> None:
+    from muni.documents.service import get_document
+    doc = get_document(doc_id)
+    if not doc:
+        console.print(f"[red]Document {doc_id} not found.[/red]")
+        raise typer.Exit(code=1)
+        
+    table = Table(title=f"Document {doc.id}")
+    table.add_column("Field", style="bold")
+    table.add_column("Value")
+    
+    table.add_row("City", doc.city)
+    table.add_row("Source URL", doc.source_url)
+    table.add_row("Local Path", doc.local_path)
+    table.add_row("SHA-256", doc.file_hash)
+    table.add_row("Captured At", doc.capture_timestamp.strftime("%Y-%m-%d %H:%M:%S") if doc.capture_timestamp else "")
+    
+    console.print(table)
 
 
 @review_app.command("queue")
