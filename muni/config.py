@@ -73,6 +73,12 @@ def write_yaml_if_missing(path: Path, data: Dict[str, Any]) -> bool:
     return True
 
 
+def write_yaml(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(data, handle, sort_keys=False)
+
+
 def initialize_default_configs(settings: Settings = None) -> Dict[str, bool]:
     settings = settings or get_settings()
     ensure_project_dirs(settings)

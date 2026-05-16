@@ -49,3 +49,96 @@ def test_doctor_runs_after_init(tmp_path, monkeypatch):
     assert "Database" in result.output
     assert Path(tmp_path / "data").exists()
 
+
+def test_city_add_list_and_show(tmp_path, monkeypatch):
+    import muni.config as config
+
+    monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
+    runner.invoke(app, ["init"])
+
+    add_result = runner.invoke(
+        app,
+        [
+            "city",
+            "add",
+            "--slug",
+            "lucknow",
+            "--name",
+            "Lucknow",
+            "--state",
+            "Uttar Pradesh",
+            "--primary-language",
+            "hindi",
+            "--secondary-language",
+            "english",
+        ],
+    )
+    assert add_result.exit_code == 0
+    assert (tmp_path / "configs" / "cities" / "lucknow.yaml").exists()
+
+    list_result = runner.invoke(app, ["city", "list"])
+    assert list_result.exit_code == 0
+    assert "lucknow" in list_result.output
+    assert "Lucknow" in list_result.output
+
+    show_result = runner.invoke(app, ["city", "show", "--city", "lucknow"])
+    assert show_result.exit_code == 0
+    assert "Uttar Pradesh" in show_result.output
+    assert "hindi" in show_result.output
+
+
+def test_sources_add_list_and_domain_rejection(tmp_path, monkeypatch):
+    import muni.config as config
+
+    monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
+    runner.invoke(app, ["init"])
+    runner.invoke(
+        app,
+        [
+            "city",
+            "add",
+            "--slug",
+            "lucknow",
+            "--name",
+            "Lucknow",
+            "--state",
+            "Uttar Pradesh",
+        ],
+    )
+
+    add_result = runner.invoke(
+        app,
+        [
+            "sources",
+            "add",
+            "--city",
+            "lucknow",
+            "--url",
+            "https://lmc.up.nic.in",
+            "--type",
+            "municipal",
+        ],
+    )
+    assert add_result.exit_code == 0
+    assert "Registered source" in add_result.output
+
+    list_result = runner.invoke(app, ["sources", "list", "--city", "lucknow"])
+    assert list_result.exit_code == 0
+    assert "municipal" in list_result.output
+    assert "https://lmc.up.nic.in" in list_result.output
+
+    reject_result = runner.invoke(
+        app,
+        [
+            "sources",
+            "add",
+            "--city",
+            "lucknow",
+            "--url",
+            "https://example.com/budget.pdf",
+            "--type",
+            "municipal",
+        ],
+    )
+    assert reject_result.exit_code == 1
+    assert "not whitelisted" in reject_result.output

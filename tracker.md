@@ -8,7 +8,7 @@ This tracker should be updated whenever meaningful work is completed, blocked, o
 
 ## Current State
 
-- Project status: Phase 0 bootstrap complete; Phase 1 not started.
+- Project status: Phase 1 city profiles and source registry complete; Phase 2 not started.
 - Primary implementation plan: `plan.md`.
 - Architecture source document: `project.md`.
 - Current product direction: city-agnostic Python CLI.
@@ -16,6 +16,7 @@ This tracker should be updated whenever meaningful work is completed, blocked, o
 - Starter example city: Varanasi only as an example, not a product limitation.
 - Git status at tracker creation: clean after commit `adf3e93`.
 - Current implementation includes Python package skeleton, Typer CLI, config initialization, doctor checks, SQLAlchemy/Alembic bootstrap, pytest, and ruff.
+- City profiles and source registration are file-based under `configs/cities/`.
 
 ## Key Decisions
 
@@ -102,21 +103,21 @@ Acceptance checkpoint:
 
 ### Phase 1 - City Profiles and Source Registry
 
-- [ ] Add city profile schema.
-- [ ] Add `muni city add`.
-- [ ] Add `muni city list`.
-- [ ] Add `muni city show`.
-- [ ] Add `muni sources add`.
-- [ ] Add `muni sources list`.
-- [ ] Add domain whitelist config.
-- [ ] Enforce official domain validation.
-- [ ] Store city profiles under `configs/cities/`.
+- [x] Add city profile schema.
+- [x] Add `muni city add`.
+- [x] Add `muni city list`.
+- [x] Add `muni city show`.
+- [x] Add `muni sources add`.
+- [x] Add `muni sources list`.
+- [x] Add domain whitelist config.
+- [x] Enforce official domain validation.
+- [x] Store city profiles under `configs/cities/`.
 
 Acceptance checkpoint:
 
-- [ ] New city can be added without code changes.
-- [ ] Non-whitelisted source domains are rejected.
-- [ ] Official sources are linked to city profiles.
+- [x] New city can be added without code changes.
+- [x] Non-whitelisted source domains are rejected.
+- [x] Official sources are linked to city profiles.
 
 ### Phase 2 - Document Discovery and Ingestion
 
@@ -323,16 +324,16 @@ Acceptance checkpoint:
 
 ## Testing Tracker
 
-- [ ] Domain whitelist validation tests.
-- [ ] City profile parsing tests.
+- [x] Domain whitelist validation tests.
+- [x] City profile parsing tests.
 - [ ] SHA-256 duplicate detection tests.
 - [ ] Fiscal year parser tests.
 - [ ] Language tagger tests.
 - [ ] Unit normalization tests.
 - [ ] Metric formula tests.
 - [ ] Red flag threshold tests.
-- [ ] Add-city integration test.
-- [ ] Register-source integration test.
+- [x] Add-city integration test.
+- [x] Register-source integration test.
 - [ ] Fixture PDF ingestion test.
 - [ ] Fixture classification test.
 - [ ] Fixture table extraction test.
@@ -388,15 +389,27 @@ Acceptance checkpoint:
   - `alembic upgrade head`
   - `python3 -m pytest`
   - `python3 -m ruff check .`
+- Implemented Phase 1 city profile and source registry:
+  - Added `muni/cities/schemas.py` and `muni/cities/service.py`.
+  - Added `muni/sources/whitelist.py`.
+  - Implemented `muni city add`, `muni city list`, and `muni city show`.
+  - Implemented `muni sources add` and `muni sources list`.
+  - Enforced official source domain validation using `configs/domains.yaml`.
+  - Added tests for city creation/list/show, source registration, and source rejection.
+- Phase 1 verification passed:
+  - `python3 -m pytest`
+  - `python3 -m ruff check .`
+  - `muni city add --help`
+  - `muni sources add --help`
 
 ## Next Recommended Task
 
-Start Phase 1:
+Start Phase 2:
 
-1. Add city profile schema.
-2. Implement `muni city add`, `muni city list`, and `muni city show`.
-3. Implement `muni sources add` and `muni sources list`.
-4. Enforce domain whitelist validation from `configs/domains.yaml`.
-5. Add tests for city profile creation and source registration.
+1. Add document metadata model or file-backed registry for the first ingestion pass.
+2. Implement `muni ingest --city <slug> --path ./data/raw/<slug>` for local PDFs.
+3. Add SHA-256 hashing and duplicate detection.
+4. Add `muni docs list` and `muni docs show`.
+5. Add tests with fixture files before implementing web crawling.
 
-Do not start crawling or OCR until city profiles and official source validation are working.
+Do not start OCR or analysis until local ingestion, hashing, and document inspection are working.

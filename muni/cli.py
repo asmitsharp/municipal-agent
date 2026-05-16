@@ -7,9 +7,17 @@ from typing import List, Optional, Tuple
 import typer
 from rich.table import Table
 
+from muni.cities.service import (
+    CityProfileError,
+    add_official_source,
+    create_city_profile,
+    list_city_profiles,
+    load_city_profile,
+)
 from muni.config import get_settings, initialize_default_configs, load_yaml
 from muni.console import console
 from muni.db.session import check_database, check_postgis
+from muni.sources.whitelist import DomainWhitelistError, validate_source_url
 
 app = typer.Typer(
     help="Municipal intelligence pipeline for Indian cities.",
@@ -151,18 +159,75 @@ def city_add(
     slug: str = typer.Option(..., help="Stable city slug, for example `lucknow`."),
     name: str = typer.Option(..., help="Human-readable city name."),
     state: str = typer.Option(..., help="Indian state or union territory."),
+    country: str = typer.Option("India", help="Country name."),
+    fiscal_year_format: str = typer.Option("april_march", help="Fiscal year convention."),
+    primary_language: Optional[str] = typer.Option(None, help="Primary document language."),
+    secondary_language: Optional[str] = typer.Option(None, help="Secondary document language."),
 ) -> None:
-    _placeholder(f"muni city add --slug {slug} --name {name!r} --state {state!r}")
+    try:
+        profile = create_city_profile(
+            slug=slug,
+            name=name,
+            state=state,
+            country=country,
+            fiscal_year_format=fiscal_year_format,
+            primary_language=primary_language,
+            secondary_language=secondary_language,
+        )
+    except CityProfileError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(f"[green]Created city profile:[/green] {profile.slug}")
+    console.print(f"Path: {get_settings().city_config_dir / f'{profile.slug}.yaml'}")
 
 
 @city_app.command("list")
 def city_list() -> None:
-    _placeholder("muni city list")
+    profiles = list_city_profiles()
+    table = Table(title="City profiles")
+    table.add_column("Slug", style="bold")
+    table.add_column("Name")
+    table.add_column("State")
+    table.add_column("Sources", justify="right")
+    for profile in profiles:
+        table.add_row(
+            profile.slug,
+            profile.name,
+            profile.state,
+            str(len(profile.official_sources)),
+        )
+    console.print(table)
 
 
 @city_app.command("show")
 def city_show(city: str = typer.Option(..., help="City slug.")) -> None:
-    _placeholder(f"muni city show --city {city}")
+    try:
+        profile = load_city_profile(city)
+    except CityProfileError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+
+    table = Table(title=f"City profile: {profile.slug}")
+    table.add_column("Field", style="bold")
+    table.add_column("Value")
+    table.add_row("Name", profile.name)
+    table.add_row("State", profile.state)
+    table.add_row("Country", profile.country)
+    table.add_row("Fiscal year", profile.fiscal_year_format)
+    table.add_row("Primary language", profile.primary_language or "")
+    table.add_row("Secondary language", profile.secondary_language or "")
+    table.add_row("Official sources", str(len(profile.official_sources)))
+    table.add_row("Known agencies", str(len(profile.known_agencies)))
+    console.print(table)
+
+    if profile.official_sources:
+        sources_table = Table(title="Official sources")
+        sources_table.add_column("Type", style="bold")
+        sources_table.add_column("URL")
+        for source in profile.official_sources:
+            sources_table.add_row(source.type, source.url)
+        console.print(sources_table)
 
 
 @sources_app.command("add")
@@ -171,12 +236,30 @@ def sources_add(
     url: str = typer.Option(..., help="Official source URL."),
     source_type: str = typer.Option(..., "--type", help="Source type."),
 ) -> None:
-    _placeholder(f"muni sources add --city {city} --url {url} --type {source_type}")
+    try:
+        validated_url = validate_source_url(url)
+        profile = add_official_source(city, validated_url, source_type)
+    except (CityProfileError, DomainWhitelistError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(f"[green]Registered source for {profile.slug}:[/green] {validated_url}")
 
 
 @sources_app.command("list")
 def sources_list(city: str = typer.Option(..., help="City slug.")) -> None:
-    _placeholder(f"muni sources list --city {city}")
+    try:
+        profile = load_city_profile(city)
+    except CityProfileError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+
+    table = Table(title=f"Official sources: {profile.slug}")
+    table.add_column("Type", style="bold")
+    table.add_column("URL")
+    for source in profile.official_sources:
+        table.add_row(source.type, source.url)
+    console.print(table)
 
 
 @app.command()
