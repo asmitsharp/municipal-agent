@@ -1,0 +1,10 @@
+allowed_domains:
+- .gov.in
+- .nic.in
+- cag.gov.in
+- mohua.gov.in
+- rbi.org.in
+- data.gov.in
+- censusindia.gov.in
+- mospi.gov.in
+- niti.gov.in

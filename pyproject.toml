@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "municipal-intelligence"
+version = "0.1.0"
+description = "CLI-first municipal intelligence pipeline for Indian cities."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+  "alembic>=1.13,<2",
+  "PyYAML>=6,<7",
+  "rich>=13,<14",
+  "SQLAlchemy>=2,<3",
+  "typer>=0.9,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+  "ruff>=0.5,<1",
+]
+
+[project.scripts]
+muni = "muni.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["muni*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+

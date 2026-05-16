@@ -8,13 +8,14 @@ This tracker should be updated whenever meaningful work is completed, blocked, o
 
 ## Current State
 
-- Project status: planning complete, implementation not started.
+- Project status: Phase 0 bootstrap complete; Phase 1 not started.
 - Primary implementation plan: `plan.md`.
 - Architecture source document: `project.md`.
 - Current product direction: city-agnostic Python CLI.
 - Default user-facing command: `muni run all`.
 - Starter example city: Varanasi only as an example, not a product limitation.
 - Git status at tracker creation: clean after commit `adf3e93`.
+- Current implementation includes Python package skeleton, Typer CLI, config initialization, doctor checks, SQLAlchemy/Alembic bootstrap, pytest, and ruff.
 
 ## Key Decisions
 
@@ -78,26 +79,26 @@ Status legend:
 
 ### Phase 0 - Python Project Bootstrap
 
-- [ ] Create Python package structure under `muni/`.
-- [ ] Add `pyproject.toml`.
-- [ ] Add Typer CLI entrypoint.
-- [ ] Add `muni init`.
-- [ ] Add `muni doctor`.
-- [ ] Add Rich terminal output helpers.
-- [ ] Add config loading from YAML.
-- [ ] Add local `data/` directory creation.
-- [ ] Add SQLAlchemy session setup.
-- [ ] Add Alembic migration setup.
-- [ ] Add pytest.
-- [ ] Add ruff.
-- [ ] Verify `muni --help`.
+- [x] Create Python package structure under `muni/`.
+- [x] Add `pyproject.toml`.
+- [x] Add Typer CLI entrypoint.
+- [x] Add `muni init`.
+- [x] Add `muni doctor`.
+- [x] Add Rich terminal output helpers.
+- [x] Add config loading from YAML.
+- [x] Add local `data/` directory creation.
+- [x] Add SQLAlchemy session setup.
+- [x] Add Alembic migration setup.
+- [x] Add pytest.
+- [x] Add ruff.
+- [x] Verify `muni --help`.
 
 Acceptance checkpoint:
 
-- [ ] `muni --help` shows command groups.
-- [ ] `muni init` creates required local directories.
-- [ ] `muni doctor` reports dependency status.
-- [ ] Empty database migrations run cleanly.
+- [x] `muni --help` shows command groups.
+- [x] `muni init` creates required local directories.
+- [x] `muni doctor` reports dependency status.
+- [x] Empty database migrations run cleanly.
 
 ### Phase 1 - City Profiles and Source Registry
 
@@ -347,8 +348,8 @@ Acceptance checkpoint:
 
 ## Open Questions
 
-- Which package manager should be used: `uv` or Poetry?
-- Should local development require PostgreSQL immediately, or allow SQLite for the first CLI skeleton?
+- Which package manager should be used long-term: `uv` or Poetry? Current bootstrap uses setuptools with editable `pip install -e ".[dev]"`.
+- Should local development require PostgreSQL after Phase 0, or continue allowing SQLite through early phases? Current bootstrap defaults to SQLite for local CLI checks.
 - Which LLM provider should the narrative and ontology adapter target first?
 - Should OCR fallback use Google Vision or Azure OCR first?
 - What should be the first real city dataset for implementation testing?
@@ -371,14 +372,31 @@ Acceptance checkpoint:
 - Added one-command workflow: `muni run all`.
 - Committed the plan updates in commit `adf3e93` with message `Refine municipal CLI implementation plan`.
 - Created this `tracker.md`.
+- Implemented Phase 0 bootstrap:
+  - Added `pyproject.toml`, `README.md`, `.gitignore`, and package skeleton under `muni/`.
+  - Added Typer CLI entrypoint with planned command groups and Phase 0 placeholders.
+  - Added `muni init` to create config files and local data directories.
+  - Added `muni doctor` with Python, workspace, database, PostGIS, Tesseract, Java, and domain-config checks.
+  - Added YAML config helpers with default `domains.yaml` and `ontology.yaml`.
+  - Added SQLAlchemy engine/session helpers and Alembic migration bootstrap.
+  - Added pytest CLI tests and ruff configuration.
+- Verification passed:
+  - `python3 -m pip install -e ".[dev]"`
+  - `muni --help`
+  - `muni init`
+  - `muni doctor`
+  - `alembic upgrade head`
+  - `python3 -m pytest`
+  - `python3 -m ruff check .`
 
 ## Next Recommended Task
 
-Start Phase 0:
+Start Phase 1:
 
-1. Create `pyproject.toml`.
-2. Create the `muni/` package.
-3. Add a Typer CLI with `muni --help`, `muni init`, and `muni doctor`.
-4. Add initial tests for command availability.
+1. Add city profile schema.
+2. Implement `muni city add`, `muni city list`, and `muni city show`.
+3. Implement `muni sources add` and `muni sources list`.
+4. Enforce domain whitelist validation from `configs/domains.yaml`.
+5. Add tests for city profile creation and source registration.
 
-Do not start crawling or OCR until the CLI skeleton, config loading, and tracker update habit are in place.
+Do not start crawling or OCR until city profiles and official source validation are working.
