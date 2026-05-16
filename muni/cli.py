@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 import typer
 from rich.table import Table
 
+from muni.agents.orchestrator import AgentOrchestrator, WorkflowResult
 from muni.cities.service import (
     CityProfileError,
     add_official_source,
@@ -67,6 +68,37 @@ def _status_table(title: str, rows: List[Tuple[str, str, str]]) -> None:
 def _placeholder(command_name: str) -> None:
     console.print(f"[yellow]{command_name} is planned but not implemented in Phase 0.[/yellow]")
     raise typer.Exit(code=2)
+
+
+def _render_workflow_result(workflow_result: WorkflowResult) -> None:
+    table = Table(title=f"Agent workflow: {workflow_result.run_id}")
+    table.add_column("Agent", style="bold", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Records", justify="right")
+    table.add_column("Review", justify="right")
+    table.add_column("Notes")
+
+    status_styles = {
+        "success": "green",
+        "partial": "yellow",
+        "blocked": "red",
+        "failed": "red",
+    }
+
+    for result in workflow_result.results:
+        style = status_styles.get(result.status, "white")
+        notes = result.errors or result.warnings or result.next_actions
+        table.add_row(
+            result.agent_name,
+            f"[{style}]{result.status}[/{style}]",
+            str(result.records_created + result.records_updated),
+            str(result.review_items_created),
+            notes[0] if notes else "",
+        )
+
+    console.print(table)
+    if workflow_result.has_blockers:
+        console.print("[red]Workflow stopped with blocked or failed agents.[/red]")
 
 
 @app.command()
@@ -420,11 +452,58 @@ def run_all(
     municipal_url: Optional[str] = typer.Option(None, help="Official municipal URL."),
     allow_review_gaps: bool = typer.Option(False, help="Continue despite critical review gaps."),
 ) -> None:
-    _placeholder(
-        "muni run all "
-        f"--city {city} --years {years} --name {name} --state {state} "
-        f"--municipal-url {municipal_url} --allow-review-gaps={allow_review_gaps}"
+    settings = get_settings()
+    initialize_default_configs(settings)
+
+    try:
+        profile = load_city_profile(city)
+    except CityProfileError:
+        if not name or not state:
+            console.print(
+                "[red]City profile does not exist. Provide --name and --state for first-time setup.[/red]"
+            )
+            raise typer.Exit(code=1)
+        try:
+            profile = create_city_profile(slug=city, name=name, state=state)
+        except CityProfileError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1)
+
+    source_urls = []
+    if municipal_url:
+        source_urls.append((municipal_url, "municipal"))
+    if municipal_url and not profile.official_sources:
+        source_urls.extend(
+            [
+                ("https://cag.gov.in", "audit"),
+                ("https://mohua.gov.in", "mission"),
+            ]
+        )
+
+    for source_url, source_type in source_urls:
+        try:
+            add_official_source(city, validate_source_url(source_url), source_type)
+        except (CityProfileError, DomainWhitelistError) as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1)
+
+    try:
+        profile = load_city_profile(city)
+    except CityProfileError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+
+    orchestrator = AgentOrchestrator()
+    context = orchestrator.build_context(
+        city_profile=profile,
+        years=years,
+        settings=settings,
+        allow_review_gaps=allow_review_gaps,
     )
+    workflow_result = orchestrator.run_all(context)
+    _render_workflow_result(workflow_result)
+    if workflow_result.has_blockers:
+        raise typer.Exit(code=1)
 
 
 @run_app.command("fiscal-health")

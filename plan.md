@@ -1,18 +1,91 @@
-# Municipal Intelligence CLI Implementation Plan
+# Municipal Intelligence Agent System Implementation Plan
 
 ## Goal
 
-Build a CLI-first municipal intelligence tool for Indian cities. The system should work for any city where primary government documents can be found, with Varanasi used only as an example starter city.
+Build a city-agnostic municipal intelligence agent system for Indian cities.
 
-The tool will collect official documents, classify them, extract fiscal and governance data, normalize Indian municipal terminology, compute fiscal health metrics, generate charts, and produce evidence-backed research drafts.
+This is not a generic document summarizer and not just a CLI data pipeline. The product is an agent-based research system that collects primary government documents, converts them into cumulative structured evidence, analyzes Indian municipal finance and governance, connects the findings to space and institutions, and produces source-backed research outputs for a human researcher to review.
 
-## Core Product Rules
+The CLI is the control surface. The agents are the architecture.
 
-- Primary sources only: accept official government domains such as `.gov.in`, `.nic.in`, `cag.gov.in`, `mohua.gov.in`, `rbi.org.in`, `data.gov.in`, state portals, municipal portals, and approved mission portals.
-- Every number must trace back to a document, source URL, page number, extraction method, confidence score, and review status.
-- Crore, lakh, Indian comma grouping, missing values, and negative corrections must be normalized explicitly.
-- Low-confidence data must go to human review before it is used in final analysis.
-- The first product is a CLI. The CLI should be useful before any dashboard, API, or web app exists.
+```text
+muni run all --city <city_slug>
+  -> AgentOrchestrator
+    -> DocumentDiscoveryAgent
+    -> DocumentClassificationAgent
+    -> OCRExtractionAgent
+    -> OntologyNormalizationAgent
+    -> FiscalAnalysisAgent
+    -> GovernanceMappingAgent
+    -> SpatialIntelligenceAgent
+    -> AnomalyDetectionAgent
+    -> VisualizationAgent
+    -> NarrativeSynthesisAgent
+      -> human researcher review
+```
+
+## Core Philosophy
+
+Three rules govern the system:
+
+1. Primary sources only.
+   Every data point must trace to a government-issued primary source such as a municipal budget, CAG audit, gazette, tender, grant report, official GIS layer, or government portal.
+
+2. India-specific reasoning.
+   The system must understand crore/lakh notation, Hindi and bilingual documents, April-March fiscal years, state-transfer dependence, overlapping agency jurisdiction, election-cycle spending distortions, and informal urban growth.
+
+3. Cumulative knowledge.
+   Each run must add to a durable evidence database. Research should compound across cities, years, documents, agencies, fiscal heads, spatial layers, and extracted facts.
+
+## What The System Must Produce
+
+For any supported city, the system should eventually produce:
+
+- A document evidence base of official primary sources.
+- Classified and prioritized municipal documents.
+- Extracted fiscal records with page-level traceability.
+- Normalized municipal budget categories.
+- Fiscal health metrics over multiple years.
+- Property tax demand-collection-balance analysis.
+- Governance responsibility maps.
+- Spatial intelligence where GIS data exists.
+- Trend and anomaly findings.
+- Publication-ready charts.
+- A Substack-style article draft.
+- A 20-post X/Twitter thread draft.
+- A review queue for uncertain documents, facts, mappings, and claims.
+
+## Product Layers
+
+The system has four layers:
+
+| Layer | Responsibility |
+|---|---|
+| CLI | User control surface: setup, run agents, inspect evidence, review outputs |
+| Agent Runtime | Common agent interface, orchestration, logging, status, retries, review gates |
+| Domain Services | Crawling, PDF parsing, OCR, table extraction, normalization, metrics, charts |
+| Evidence Store | Documents, pages, extracted records, facts, metrics, review items, artifacts |
+
+The CLI should never contain the business logic. CLI commands call workflows or individual agents.
+
+## Current Implementation State
+
+Already implemented:
+
+- Python package skeleton.
+- Typer CLI and Rich output.
+- `muni init`.
+- `muni doctor`.
+- City profiles under `configs/cities/`.
+- Source registration.
+- Domain whitelist validation.
+- SQLAlchemy and Alembic bootstrap.
+- pytest and ruff setup.
+
+Important correction:
+
+- The next phase should not jump directly into ingestion as loose functions.
+- The next phase should add the agent runtime and make future pipeline stages first-class agents.
 
 ## City-Agnostic Design
 
@@ -44,385 +117,108 @@ known_agencies:
   - Lucknow Development Authority
   - Jal Nigam
   - PWD
+election_years:
+  local_body:
+    - 2017
+    - 2022
 ```
 
-The CLI should support:
+City profiles provide agent context. They tell agents where to search, which languages to expect, which fiscal-year convention to use, which agencies are known, and which election years matter for anomaly detection.
 
-- Adding a new city.
-- Registering official source URLs for that city.
-- Running the same discovery, extraction, analysis, visualization, and narrative pipeline against that city.
-- Keeping city-specific agency names, source portals, languages, ward layers, and election years in config instead of code.
+## Agent Runtime Design
 
-## How The CLI Works
+All agents should implement the same basic contract.
 
-The CLI is a pipeline runner plus an inspection tool.
+```python
+class BaseAgent:
+    name: str
+    description: str
 
-A user should be able to run one command at a time while building confidence:
-
-```bash
-muni city add --slug lucknow --name "Lucknow" --state "Uttar Pradesh"
-muni sources add --city lucknow --url https://lmc.up.nic.in --type municipal
-muni discover --city lucknow
-muni classify --city lucknow
-muni extract --city lucknow --priority P1
-muni normalize --city lucknow
-muni analyze --city lucknow --years 2019-20:2023-24
-muni visualize --city lucknow --pack fiscal-health
-muni narrative draft --city lucknow --format substack
+    def run(self, context: AgentContext) -> AgentResult:
+        ...
 ```
 
-The same flow should also run as a bundled workflow:
+Shared context:
 
-```bash
-muni run fiscal-health --city lucknow --years 2019-20:2023-24
+```python
+@dataclass
+class AgentContext:
+    city_slug: str
+    years: Optional[YearRange]
+    run_id: str
+    settings: Settings
+    city_profile: CityProfile
+    database_url: str
+    artifact_dir: Path
+    allow_review_gaps: bool = False
 ```
 
-For normal use, there should be one command that runs the complete workflow:
+Shared result:
 
-```bash
-muni run all --city lucknow --years 2019-20:2023-24
+```python
+@dataclass
+class AgentResult:
+    agent_name: str
+    status: Literal["success", "partial", "failed", "blocked"]
+    records_created: int = 0
+    records_updated: int = 0
+    review_items_created: int = 0
+    artifacts_created: List[Path] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    next_actions: List[str] = field(default_factory=list)
 ```
 
-The CLI does four things for every command:
+Why this matters:
 
-1. Reads city config, source config, and pipeline settings.
-2. Runs the requested stage.
-3. Writes structured records to the database and artifacts to `data/`.
-4. Prints a concise terminal report showing what succeeded, what failed, and what needs review.
+- `muni run all` can report stage-by-stage status.
+- Failed runs can resume from a named agent.
+- Review gates can stop unsafe narrative generation.
+- Each agent can be tested independently.
+- LLM-backed steps can be added later without changing CLI behavior.
 
-Example output style:
+## Agents To Implement
 
-```text
-City: Lucknow
-Stage: classify
+### Agent 1 - DocumentDiscoveryAgent
 
-Documents scanned: 42
-Classified: 36
-Needs review: 6
-Duplicates skipped: 4
+Purpose: find and download only primary government documents.
 
-Next:
-  muni review queue --city lucknow
-  muni extract --city lucknow --priority P1
-```
+Responsibilities:
 
-The CLI should never hide uncertainty. If a document has no fiscal year, a table fails extraction, or a source is not whitelisted, the command should record the issue and show the next action.
+- Read official sources from the city profile.
+- Crawl approved domains only.
+- Reject news, blogs, think-tank PDFs, Wikipedia, and unapproved domains.
+- Discover municipal budgets, CAG reports, grant reports, master plans, GIS documents, tenders, meeting minutes, and property tax records.
+- Record broken links and parent pages.
+- Support archive fallback later.
+- Store downloaded PDFs with stable metadata and hash.
 
-## CLI Commands
+Inputs:
 
-Binary name:
+- City profile.
+- Domain whitelist.
+- Source registry.
 
-```bash
-muni
-```
+Outputs:
 
-Setup and configuration:
+- Document records.
+- Raw PDFs in local or object storage.
+- Broken-link records.
+- Review items for suspicious or unsupported sources.
 
-```bash
-muni init
-muni doctor
-muni city add --slug <city_slug> --name "<City Name>" --state "<State>"
-muni city list
-muni city show --city <city_slug>
-muni sources add --city <city_slug> --url <official_url> --type <source_type>
-muni sources list --city <city_slug>
-```
-
-Pipeline commands:
+CLI:
 
 ```bash
 muni discover --city <city_slug>
-muni ingest --city <city_slug> --path ./data/raw/<city_slug>
-muni classify --city <city_slug>
-muni extract --city <city_slug> --doc-id <doc_id>
-muni extract --city <city_slug> --priority P1
-muni normalize --city <city_slug>
-muni analyze --city <city_slug> --years 2019-20:2023-24
-muni governance map --city <city_slug>
-muni spatial ingest --city <city_slug> --layer wards --path ./wards.geojson
-muni anomalies run --city <city_slug>
-muni visualize --city <city_slug> --pack fiscal-health
-muni narrative draft --city <city_slug> --format substack
-muni narrative draft --city <city_slug> --format twitter
-muni export --city <city_slug> --bundle fiscal-health
 ```
 
-Inspection and review commands:
+### Agent 2 - DocumentClassificationAgent
 
-```bash
-muni docs list --city <city_slug> --priority P1
-muni docs show <doc_id>
-muni review queue --city <city_slug>
-muni review approve <review_id>
-muni ontology unmapped --city <city_slug>
-muni ontology approve <mapping_id>
-muni metrics table --city <city_slug>
-muni anomalies list --city <city_slug>
-muni evidence show --metric own_source_revenue_ratio --city <city_slug> --year 2022-23
-muni trace <record_id>
-```
+Purpose: classify incoming documents before extraction.
 
-Bundled workflows:
+Responsibilities:
 
-```bash
-muni run all --city <city_slug> --years 2019-20:2023-24
-muni run fiscal-health --city <city_slug> --years 2019-20:2023-24
-muni run discovery-only --city <city_slug>
-muni run charts-only --city <city_slug>
-```
-
-One-command first-time run:
-
-```bash
-muni run all \
-  --city <city_slug> \
-  --name "<City Name>" \
-  --state "<State>" \
-  --municipal-url <official_municipal_url> \
-  --years 2019-20:2023-24
-```
-
-If the city already exists, `--name`, `--state`, and `--municipal-url` are optional. If the city does not exist, the command should create the city profile, register the municipal source, add default national sources such as CAG and MOHUA, and then run the full pipeline.
-
-`muni run all` should execute these stages in order:
-
-1. `doctor` dependency checks.
-2. City profile validation or creation.
-3. Official source validation.
-4. Document discovery.
-5. Document classification.
-6. P1 extraction.
-7. Ontology normalization.
-8. Fiscal analysis.
-9. Governance mapping.
-10. Anomaly detection.
-11. Visualization pack generation.
-12. Substack draft generation.
-13. Twitter thread generation.
-14. Export bundle creation.
-
-Default behavior should stop before narrative export if there are unresolved critical review items. The user can override this with:
-
-```bash
-muni run all --city <city_slug> --years 2019-20:2023-24 --allow-review-gaps
-```
-
-## Python Tech Stack
-
-Use Python across the project for speed of implementation, easier PDF processing, and simpler data science workflows.
-
-| Layer | Recommended Tooling |
-|---|---|
-| CLI | Typer + Rich |
-| Config | Pydantic Settings + YAML |
-| Database ORM | SQLAlchemy |
-| Migrations | Alembic |
-| Primary Database | PostgreSQL + PostGIS |
-| Local Development Database | SQLite allowed only for lightweight tests |
-| HTTP Fetching | httpx |
-| HTML Parsing | BeautifulSoup / selectolax |
-| Crawling | Custom crawler first, Scrapy later if needed |
-| PDF Text | pdfplumber + pypdf |
-| OCR | pytesseract + Tesseract `eng+hin` |
-| OCR Fallback | Google Vision or Azure OCR for difficult Devanagari scans |
-| Table Extraction | Camelot + Tabula-py |
-| Data Analysis | pandas + numpy |
-| Spatial | GeoPandas + Shapely + PostGIS |
-| Charts | matplotlib + seaborn + plotly where useful |
-| Templates | Jinja2 |
-| LLM Adapter | Provider-neutral interface |
-| Testing | pytest |
-| Formatting | ruff |
-| Type Checking | mypy or pyright |
-| Packaging | uv or Poetry |
-
-Future scale-up options:
-
-- Redis for background job queues.
-- S3-compatible storage for raw PDFs and generated artifacts.
-- Qdrant for semantic search across extracted text.
-- FastAPI if a web API is needed later.
-
-## Repository Structure
-
-```text
-.
-├── muni/
-│   ├── __init__.py
-│   ├── cli.py                     # Typer app entrypoint
-│   ├── config.py                  # settings and config loading
-│   ├── db/
-│   │   ├── models.py
-│   │   ├── session.py
-│   │   └── migrations/
-│   ├── cities/
-│   │   ├── service.py             # city profile operations
-│   │   └── schemas.py
-│   ├── sources/
-│   │   ├── whitelist.py
-│   │   └── crawler.py
-│   ├── documents/
-│   │   ├── ingest.py
-│   │   ├── hashing.py
-│   │   └── classify.py
-│   ├── extraction/
-│   │   ├── pdf_text.py
-│   │   ├── ocr.py
-│   │   ├── tables.py
-│   │   ├── units.py
-│   │   └── records.py
-│   ├── ontology/
-│   │   ├── mapping.py
-│   │   └── categories.py
-│   ├── analysis/
-│   │   ├── metrics.py
-│   │   ├── property_tax.py
-│   │   └── anomalies.py
-│   ├── governance/
-│   │   └── matrix.py
-│   ├── spatial/
-│   │   └── layers.py
-│   ├── visualization/
-│   │   └── charts.py
-│   ├── narrative/
-│   │   ├── drafts.py
-│   │   └── templates/
-│   ├── review/
-│   │   └── queue.py
-│   └── workflows/
-│       └── fiscal_health.py
-├── configs/
-│   ├── domains.yaml
-│   ├── ontology.yaml
-│   └── cities/
-│       ├── varanasi.yaml
-│       └── lucknow.yaml
-├── data/
-│   ├── raw/
-│   ├── processed/
-│   ├── charts/
-│   └── exports/
-├── tests/
-│   ├── fixtures/
-│   └── test_units.py
-├── pyproject.toml
-├── README.md
-└── plan.md
-```
-
-## Data Model
-
-Minimum tables:
-
-| Table | Purpose |
-|---|---|
-| `cities` | City metadata, state, population references, fiscal-year rules |
-| `source_domains` | Approved source whitelist and source type |
-| `city_sources` | Official URLs registered for each city |
-| `documents` | PDF metadata, source URL, hash, city, fiscal year, type, priority |
-| `document_pages` | Extracted page text, OCR status, language, quality flags |
-| `extraction_records` | Raw extracted facts with page references and confidence |
-| `financial_facts` | Normalized revenue, expenditure, grant, tax, debt, and capex records |
-| `ontology_mappings` | Raw budget head to canonical category mappings |
-| `metrics` | Computed fiscal indicators by city and fiscal year |
-| `red_flags` | Fiscal stress alerts and anomaly findings |
-| `agencies` | City-specific agencies and source evidence |
-| `service_responsibilities` | Who plans, funds, builds, operates, and regulates each service |
-| `spatial_layers` | Ward maps and GIS metadata |
-| `visualizations` | Generated chart metadata and source dependencies |
-| `narrative_outputs` | Draft articles, threads, and evidence references |
-| `review_items` | Low-confidence records and uncertain mappings needing human review |
-
-## Implementation Phases
-
-### Phase 0 - Python Project Bootstrap
-
-Deliverables:
-
-- Create Python package and Typer CLI.
-- Add `muni init`, `muni doctor`, and `muni --help`.
-- Add config loading from `configs/*.yaml`.
-- Add local data directories.
-- Add SQLAlchemy models and Alembic migrations.
-- Add Rich terminal output.
-- Add pytest and ruff.
-
-`muni doctor` should verify:
-
-- Python version.
-- PostgreSQL connection.
-- PostGIS availability.
-- Tesseract installed.
-- Hindi OCR language pack available.
-- Java available if Tabula is enabled.
-- writable `data/` directories.
-
-Acceptance criteria:
-
-- `muni --help` shows command groups.
-- `muni init` creates required config and data directories.
-- `muni doctor` reports dependency status clearly.
-- Migrations run from a clean database.
-
-### Phase 1 - City Profiles and Source Registry
-
-Deliverables:
-
-- Add city profile schema.
-- Add city create/list/show commands.
-- Add source URL registration.
-- Add strict domain whitelist validation.
-- Add city-specific config files under `configs/cities/`.
-
-Commands:
-
-```bash
-muni city add --slug lucknow --name "Lucknow" --state "Uttar Pradesh"
-muni sources add --city lucknow --url https://lmc.up.nic.in --type municipal
-muni sources list --city lucknow
-```
-
-Acceptance criteria:
-
-- New cities can be added without code changes.
-- Non-whitelisted domains are rejected.
-- Official sources are linked to the correct city.
-- City profile data is available to later pipeline stages.
-
-### Phase 2 - Document Discovery and Ingestion
-
-Deliverables:
-
-- PDF link crawler for registered official sources.
-- Download manager with SHA-256 hashing.
-- Manual local file ingestion.
-- Broken-link logging.
-- Filename normalization:
-
-```text
-{city}_{doc_type}_{fiscal_year}_{source}_{download_date}.pdf
-```
-
-Commands:
-
-```bash
-muni discover --city lucknow
-muni ingest --city lucknow --path ./data/raw/lucknow
-muni docs list --city lucknow
-```
-
-Acceptance criteria:
-
-- Duplicate hashes are not ingested twice.
-- Each document has source URL, local path, hash, and capture timestamp.
-- Broken links are recorded with parent URL and HTTP status.
-- Documents from unknown domains are rejected before download.
-
-### Phase 3 - Document Classification
-
-Deliverables:
-
-- Rule-based classifier for:
+- Classify document type:
   - Revenue Budget
   - Capital Budget
   - CAG Audit Report
@@ -432,69 +228,67 @@ Deliverables:
   - Meeting Minutes
   - Property Tax Record
   - Tender Document
-- Fiscal year detection from filename and first three pages.
-- Language tagging: `ENGLISH`, `HINDI`, `BILINGUAL`, `MIXED`.
-- Priority ranking from P1 to P5.
-- Near-duplicate detection using city, fiscal year, file size, page count, and document type.
+- Detect fiscal year from filename and first pages.
+- Tag language: `ENGLISH`, `HINDI`, `BILINGUAL`, `MIXED`.
+- Rank priority P1-P5.
+- Detect exact duplicates by SHA-256.
+- Detect near duplicates by city, year, type, file size, and page count.
 
-Commands:
+Outputs:
 
-```bash
-muni classify --city lucknow
-muni docs list --city lucknow --priority P1
-muni docs show <doc_id>
-```
+- Classified document metadata.
+- Priority queues.
+- Review items for uncertain classification.
 
-Acceptance criteria:
-
-- Classification result includes reason codes.
-- Uncertain classifications create review items.
-- Hindi and scanned documents are routed to OCR.
-- CAG reports, budget actuals, and property tax records are ranked P1.
-
-### Phase 4 - OCR and Structured Extraction
-
-Deliverables:
-
-- Text extraction for text-native PDFs.
-- OCR for scanned PDFs using Tesseract `eng+hin`.
-- Table extraction using Camelot or Tabula.
-- Extraction schemas for:
-  - Own-source revenue
-  - External transfers
-  - Expenditure
-  - Property tax DCB
-  - Capital works
-  - Debt service
-- Unit normalization for crore, lakh, Indian comma grouping, blanks, and negative values.
-- Confidence scoring.
-
-Commands:
+CLI:
 
 ```bash
-muni extract --city lucknow --doc-id <doc_id>
-muni extract --city lucknow --priority P1
-muni review queue --city lucknow
-muni trace <record_id>
+muni classify --city <city_slug>
 ```
 
-Acceptance criteria:
+### Agent 3 - OCRExtractionAgent
 
-- Each extracted value has document ID, page number, raw text, normalized INR value, confidence, and extraction method.
-- Row and column totals are cross-checked when possible.
-- Low-confidence OCR results enter the review queue.
-- No extracted number is stored without a source reference.
+Purpose: convert PDFs and scanned documents into structured evidence.
 
-### Phase 5 - Ontology and Normalization
+Responsibilities:
 
-Deliverables:
+- Extract text from text-native PDFs.
+- OCR scanned PDFs using Tesseract `eng+hin`.
+- Route difficult Devanagari scans to Google Vision or Azure OCR later.
+- Extract tables using Camelot or Tabula.
+- Extract own-source revenue, external transfers, expenditure, property tax DCB, capital works, and debt service.
+- Normalize crore, lakh, Indian comma grouping, blanks, and negative values.
+- Assign confidence scores.
+- Preserve raw text, page number, extraction method, and source reference.
 
-- Canonical municipal category mapping from raw budget heads.
-- Mapping log for every non-obvious match.
-- Fiscal year normalization to April-March unless city config says otherwise.
-- Review workflow for uncertain mappings.
+Outputs:
 
-Canonical categories must include:
+- Page text.
+- Raw extraction records.
+- Normalized financial facts.
+- Confidence scores.
+- Review items for low-confidence extraction.
+
+CLI:
+
+```bash
+muni extract --city <city_slug> --priority P1
+muni extract --city <city_slug> --doc-id <doc_id>
+```
+
+### Agent 4 - OntologyNormalizationAgent
+
+Purpose: create a semantic layer across cities and years.
+
+Responsibilities:
+
+- Map raw budget heads to canonical municipal categories.
+- Preserve raw labels.
+- Record every non-obvious mapping in a mapping log.
+- Never silently merge uncertain categories.
+- Normalize fiscal years to April-March unless city config says otherwise.
+
+Canonical categories include:
 
 - `SOLID_WASTE_MANAGEMENT`
 - `ROAD_INFRASTRUCTURE`
@@ -509,26 +303,21 @@ Canonical categories must include:
 - `STREET_LIGHTING`
 - `PUBLIC_HEALTH`
 
-Commands:
+CLI:
 
 ```bash
-muni normalize --city lucknow
-muni ontology unmapped --city lucknow
+muni normalize --city <city_slug>
+muni ontology unmapped --city <city_slug>
 muni ontology approve <mapping_id>
 ```
 
-Acceptance criteria:
+### Agent 5 - FiscalAnalysisAgent
 
-- Raw names remain preserved after mapping.
-- Uncertain mappings are not silently merged.
-- Mapping decisions are auditable.
-- The same ontology works across multiple cities.
+Purpose: compute municipal fiscal health metrics and red flags.
 
-### Phase 6 - Fiscal Analysis Engine
+Responsibilities:
 
-Deliverables:
-
-- Metric computation engine for:
+- Compute:
   - Own Source Revenue Ratio
   - Property Tax Collection Efficiency
   - Property Tax per Capita
@@ -538,166 +327,572 @@ Deliverables:
   - Debt Service Coverage
   - Revenue per Capita
   - O&M Spending per Sector
-- Property tax DCB analysis.
-- Fiscal stress red flags.
-- Evidence trace for every metric.
+- Run property tax demand-collection-balance analysis.
+- Separate Smart City capex from core municipal capex where possible.
+- Generate red flags for fiscal stress.
+- Store evidence traces for each formula input.
 
-Commands:
+CLI:
 
 ```bash
-muni analyze --city lucknow --years 2019-20:2023-24
-muni metrics table --city lucknow
-muni evidence show --metric property_tax_collection_efficiency --city lucknow --year 2022-23
+muni analyze --city <city_slug> --years 2019-20:2023-24
+muni metrics table --city <city_slug>
+muni evidence show --metric own_source_revenue_ratio --city <city_slug> --year 2022-23
 ```
 
-Acceptance criteria:
+### Agent 6 - GovernanceMappingAgent
 
-- Metrics run for at least three fiscal years when data exists.
-- Formula inputs are visible through `muni evidence show`.
-- Red flags are generated from configured thresholds.
-- Smart City capex can be separated from core municipal capex.
+Purpose: map institutional fragmentation and accountability gaps.
 
-### Phase 7 - Governance Mapping
+Responsibilities:
 
-Deliverables:
+- Build a city-specific agency registry.
+- For roads, water, SWM, sewerage, transit, street lighting, parks, and drainage, answer:
+  - Who plans it?
+  - Who funds it?
+  - Who builds it?
+  - Who operates it?
+  - Who regulates it?
+- Mark unknown fields as `UNKNOWN`, not guessed.
+- Attach source evidence to each responsibility claim.
 
-- City-specific agency registry.
-- Service responsibility matrix for roads, water, SWM, sewerage, transit, street lighting, parks, and drainage.
-- Source references for each agency responsibility.
-
-Commands:
+CLI:
 
 ```bash
-muni governance map --city lucknow
-muni governance service --city lucknow --service water
+muni governance map --city <city_slug>
+muni governance service --city <city_slug> --service water
 ```
 
-Acceptance criteria:
+### Agent 7 - SpatialIntelligenceAgent
 
-- Each service records who plans, funds, builds, operates, and regulates.
-- Fragmented ownership is explicitly represented.
-- Unknown responsibility fields are marked `UNKNOWN`, not guessed.
-- Agency names come from city config and discovered documents.
+Purpose: connect finance and governance data to geography.
 
-### Phase 8 - GIS and Spatial Intelligence
+Responsibilities:
 
-Deliverables:
+- Ingest ward boundaries into PostGIS.
+- Store spatial source metadata.
+- Join ward-level property tax and population data where available.
+- Support future layers for built-up growth, road networks, infrastructure coverage, unauthorized colonies, flood zones, and land-use mismatch.
+- Generate data gaps when spatial data is unavailable.
 
-- PostGIS support for ward boundaries.
-- Spatial layer ingestion metadata.
-- Ward-level joins for property tax and population where available.
-- Stubs for built-up growth, infrastructure coverage, and flood-risk layers.
-
-Commands:
+CLI:
 
 ```bash
-muni spatial ingest --city lucknow --layer wards --path ./data/raw/gis/lucknow_wards.geojson
-muni spatial layers --city lucknow
-muni spatial join-tax --city lucknow
+muni spatial ingest --city <city_slug> --layer wards --path ./wards.geojson
+muni spatial layers --city <city_slug>
+muni spatial join-tax --city <city_slug>
 ```
 
-Acceptance criteria:
+### Agent 8 - AnomalyDetectionAgent
 
-- Ward geometries load into PostGIS.
-- Spatial source metadata is preserved.
-- Missing ward-level tax data creates a review/data-gap item.
+Purpose: detect multi-year patterns that single-year analysis misses.
 
-### Phase 9 - Trend and Anomaly Detection
+Responsibilities:
 
-Deliverables:
+- Detect pre-election capex spikes.
+- Detect property tax plateau.
+- Detect grant absorption failure.
+- Detect salary creep.
+- Detect O&M collapse.
+- Detect sudden new revenue heads.
+- Detect negative capex years.
+- Use election-year config from city/state profile.
 
-- Multi-year anomaly rules:
-  - Pre-election capex spike
-  - Property tax plateau
-  - Grant absorption failure
-  - Salary creep
-  - O&M collapse
-  - Sudden new revenue head
-  - Negative capex year
-- Election-year configuration by state and city.
-
-Commands:
+CLI:
 
 ```bash
-muni anomalies run --city lucknow
-muni anomalies list --city lucknow
+muni anomalies run --city <city_slug>
+muni anomalies list --city <city_slug>
 muni anomalies explain <anomaly_id>
 ```
 
-Acceptance criteria:
+### Agent 9 - VisualizationAgent
 
-- Each anomaly includes rule name, years affected, metric values, threshold, and source evidence.
-- Election-year rules use configured dates.
-- Anomalies can be dismissed or marked for narrative use.
+Purpose: produce publication-ready visuals for research outputs.
 
-### Phase 10 - Visualization
+Responsibilities:
 
-Deliverables:
-
-- Chart renderer for:
+- Generate:
   - Revenue Sankey
   - Revenue stacked bar
   - Expenditure donut
   - Property tax DCB waterfall
   - Fiscal trend line chart
   - Governance network map
-  - Ward heatmap if ward data exists
-- Twitter/X chart size export at `1200x675`.
-- Chart footer with city, fiscal year, and primary source.
+  - Ward heatmap where data exists
+- Export Twitter/X-ready `1200x675` images.
+- Include city, fiscal year, and source footer or metadata.
+- Avoid more than five data series per chart.
+- Avoid red/green-only palettes.
 
-Commands:
-
-```bash
-muni visualize --city lucknow --pack fiscal-health
-muni visualize one --city lucknow --chart property-tax-dcb --year 2022-23
-```
-
-Acceptance criteria:
-
-- At least five publication-ready charts are generated when data exists.
-- Each chart has source metadata in the image footer or adjacent metadata file.
-- No chart uses more than five data series.
-- Red/green-only palettes are avoided.
-
-### Phase 11 - Narrative Synthesis
-
-Deliverables:
-
-- Markdown Substack draft generator.
-- 20-post X/Twitter thread generator.
-- Evidence-link insertion for claims and charts.
-- Caveat insertion for uncertain data.
-- Export bundle with article, thread, charts, and source table.
-
-Commands:
+CLI:
 
 ```bash
-muni narrative draft --city lucknow --format substack
-muni narrative draft --city lucknow --format twitter
-muni export --city lucknow --bundle fiscal-health
+muni visualize --city <city_slug> --pack fiscal-health
+muni visualize one --city <city_slug> --chart property-tax-dcb --year 2022-23
 ```
 
-Acceptance criteria:
+### Agent 10 - NarrativeSynthesisAgent
 
-- Draft article follows the research structure from `project.md`.
-- Thread contains exactly 20 posts.
-- Every quantitative claim links to evidence.
-- Final export includes a source bibliography with document page references.
+Purpose: convert structured analysis into public-facing research drafts.
 
-## Example End-to-End Workflow
+Responsibilities:
 
-For any city:
+- Produce a Substack-style draft.
+- Produce a 20-post X/Twitter thread.
+- Use INR crore as the default public unit.
+- Insert evidence links for quantitative claims.
+- Insert caveats for uncertain data.
+- Avoid unsupported claims.
+- Stop if critical review items remain unless explicitly overridden.
+
+CLI:
+
+```bash
+muni narrative draft --city <city_slug> --format substack
+muni narrative draft --city <city_slug> --format twitter
+muni export --city <city_slug> --bundle fiscal-health
+```
+
+## CLI Behavior
+
+The CLI should support both individual agents and full workflows.
+
+Setup:
+
+```bash
+muni init
+muni doctor
+muni city add --slug <city_slug> --name "<City Name>" --state "<State>"
+muni sources add --city <city_slug> --url <official_url> --type <source_type>
+muni sources list --city <city_slug>
+```
+
+Run one agent:
+
+```bash
+muni discover --city <city_slug>
+muni classify --city <city_slug>
+muni extract --city <city_slug> --priority P1
+muni normalize --city <city_slug>
+muni analyze --city <city_slug> --years 2019-20:2023-24
+```
+
+Run the full workflow:
 
 ```bash
 muni run all \
   --city <city_slug> \
   --name "<City Name>" \
   --state "<State>" \
-  --municipal-url <municipal_url> \
+  --municipal-url <official_municipal_url> \
   --years 2019-20:2023-24
 ```
 
-For Varanasi as a starter example:
+`muni run all` must run:
+
+1. `doctor` checks.
+2. City profile validation or creation.
+3. Source validation.
+4. DocumentDiscoveryAgent.
+5. DocumentClassificationAgent.
+6. OCRExtractionAgent.
+7. OntologyNormalizationAgent.
+8. FiscalAnalysisAgent.
+9. GovernanceMappingAgent.
+10. SpatialIntelligenceAgent where spatial inputs exist.
+11. AnomalyDetectionAgent.
+12. VisualizationAgent.
+13. NarrativeSynthesisAgent.
+14. Export bundle.
+
+Default behavior: stop before narrative generation if critical review items remain.
+
+Override:
+
+```bash
+muni run all --city <city_slug> --years 2019-20:2023-24 --allow-review-gaps
+```
+
+Inspection commands:
+
+```bash
+muni docs list --city <city_slug> --priority P1
+muni docs show <doc_id>
+muni review queue --city <city_slug>
+muni review approve <review_id>
+muni metrics table --city <city_slug>
+muni anomalies list --city <city_slug>
+muni evidence show --metric own_source_revenue_ratio --city <city_slug> --year 2022-23
+muni trace <record_id>
+```
+
+## Evidence And Data Model
+
+The database must support cumulative research, not one-off outputs.
+
+Minimum entities:
+
+| Entity | Purpose |
+|---|---|
+| `cities` | City metadata, languages, fiscal rules, population references |
+| `city_sources` | Official source URLs per city |
+| `agent_runs` | Per-agent run status, timestamps, warnings, errors |
+| `documents` | Source URL, file path, hash, document type, city, year, priority |
+| `document_pages` | Extracted text, OCR status, page language, page quality |
+| `extraction_records` | Raw extracted values with page references and confidence |
+| `financial_facts` | Normalized fiscal facts in INR and canonical units |
+| `ontology_mappings` | Raw labels mapped to canonical categories |
+| `metrics` | Computed indicators by city and fiscal year |
+| `metric_inputs` | Formula inputs for traceability |
+| `red_flags` | Fiscal stress and anomaly findings |
+| `agencies` | City-specific agencies |
+| `service_responsibilities` | Who plans, funds, builds, operates, regulates |
+| `spatial_layers` | GIS layer metadata and source references |
+| `visualizations` | Chart artifacts and source dependencies |
+| `narrative_outputs` | Drafts, threads, and claim references |
+| `review_items` | Human review queue for uncertainty and low confidence |
+
+Every important record should connect back to evidence.
+
+```text
+claim -> metric -> metric_inputs -> financial_facts -> extraction_records -> document_page -> document -> source_url
+```
+
+## Review Gates
+
+Agents should create review items instead of guessing.
+
+Review item types:
+
+- `UNAPPROVED_SOURCE`
+- `UNKNOWN_DOCUMENT_TYPE`
+- `MISSING_FISCAL_YEAR`
+- `LOW_CONFIDENCE_OCR`
+- `TABLE_EXTRACTION_FAILED`
+- `UNIT_AMBIGUITY`
+- `NEGATIVE_VALUE_REVIEW`
+- `UNCERTAIN_ONTOLOGY_MAPPING`
+- `MISSING_GOVERNANCE_SOURCE`
+- `SPATIAL_DATA_GAP`
+- `UNSUPPORTED_NARRATIVE_CLAIM`
+
+Hard gates:
+
+- No unapproved source can enter final analysis.
+- No number without page-level evidence can enter final narrative.
+- Critical low-confidence facts must be reviewed before narrative export.
+- Narrative generation must stop if evidence links are missing, unless the user explicitly allows review gaps.
+
+## Python Tech Stack
+
+Use Python for implementation speed and strong PDF/data tooling.
+
+| Layer | Tooling |
+|---|---|
+| CLI | Typer + Rich |
+| Agent Runtime | Python classes with shared context/result models |
+| Config | YAML, later Pydantic validation |
+| ORM | SQLAlchemy |
+| Migrations | Alembic |
+| Primary Database | PostgreSQL + PostGIS |
+| Local Early Development | SQLite allowed for bootstrap/tests only |
+| HTTP | httpx |
+| HTML Parsing | BeautifulSoup or selectolax |
+| PDF Text | pdfplumber + pypdf |
+| OCR | pytesseract + Tesseract `eng+hin` |
+| OCR Fallback | Google Vision or Azure OCR |
+| Tables | Camelot + Tabula-py |
+| Data Analysis | pandas + numpy |
+| Spatial | GeoPandas + Shapely + PostGIS |
+| Charts | matplotlib, seaborn, plotly, later D3/Observable where needed |
+| Templates | Jinja2 |
+| LLM Adapter | Provider-neutral interface for ontology/narrative only when useful |
+| Testing | pytest |
+| Formatting | ruff |
+
+Future scale-up:
+
+- Redis for queues and crawl rate limiting.
+- S3-compatible object storage for PDFs and artifacts.
+- Qdrant for semantic search over extracted document text.
+- FastAPI for a future API surface.
+
+## Repository Structure
+
+Target structure:
+
+```text
+.
+├── muni/
+│   ├── cli.py
+│   ├── config.py
+│   ├── agents/
+│   │   ├── base.py
+│   │   ├── context.py
+│   │   ├── result.py
+│   │   ├── orchestrator.py
+│   │   ├── discovery.py
+│   │   ├── classification.py
+│   │   ├── extraction.py
+│   │   ├── ontology.py
+│   │   ├── fiscal_analysis.py
+│   │   ├── governance.py
+│   │   ├── spatial.py
+│   │   ├── anomaly.py
+│   │   ├── visualization.py
+│   │   └── narrative.py
+│   ├── cities/
+│   ├── sources/
+│   ├── documents/
+│   ├── extraction/
+│   ├── ontology/
+│   ├── analysis/
+│   ├── governance/
+│   ├── spatial/
+│   ├── visualization/
+│   ├── narrative/
+│   ├── review/
+│   └── db/
+├── configs/
+│   ├── domains.yaml
+│   ├── ontology.yaml
+│   └── cities/
+├── data/
+│   ├── raw/
+│   ├── processed/
+│   ├── charts/
+│   └── exports/
+├── tests/
+├── project.md
+├── plan.md
+└── tracker.md
+```
+
+Agent classes should orchestrate domain services. Domain services should hold reusable deterministic logic.
+
+Example:
+
+```text
+DocumentClassificationAgent
+  -> documents/classifier.py
+  -> documents/fiscal_year.py
+  -> documents/language.py
+  -> review/queue.py
+```
+
+## Implementation Phases
+
+### Phase 0 - Bootstrap - Complete
+
+Implemented:
+
+- Python package skeleton.
+- Typer CLI.
+- `muni init`.
+- `muni doctor`.
+- SQLAlchemy/Alembic bootstrap.
+- pytest and ruff.
+
+### Phase 1 - City Profiles and Source Registry - Complete
+
+Implemented:
+
+- City profiles.
+- `muni city add/list/show`.
+- Source registration.
+- Domain whitelist validation.
+- `muni sources add/list`.
+
+### Phase 2 - Agent Runtime Foundation
+
+Deliverables:
+
+- `muni/agents/base.py`.
+- `muni/agents/context.py`.
+- `muni/agents/result.py`.
+- `muni/agents/orchestrator.py`.
+- Agent run logging model or file-backed run log.
+- Agent registry mapping CLI commands to agent classes.
+- No-op or minimal implementations for all 10 agents.
+- `muni run all` should invoke the orchestrator and show per-agent status, even if most agents are placeholders.
+
+Acceptance criteria:
+
+- All 10 agent classes exist.
+- Every agent returns an `AgentResult`.
+- `muni run all` executes agents in order.
+- Failed/blocked agents are reported clearly.
+- Tests cover the orchestrator order and result handling.
+
+### Phase 3 - Document Evidence Store and Local Ingestion
+
+Deliverables:
+
+- Document metadata model.
+- Local PDF ingestion.
+- SHA-256 hashing.
+- Exact duplicate detection.
+- `muni ingest` implemented through DocumentDiscoveryAgent or ingestion service.
+- `muni docs list`.
+- `muni docs show`.
+
+Acceptance criteria:
+
+- Documents are associated with city profiles.
+- Duplicate hashes are skipped.
+- Every document has source/path/hash/capture metadata.
+
+### Phase 4 - DocumentDiscoveryAgent Web Discovery
+
+Deliverables:
+
+- Official source crawler.
+- PDF link discovery.
+- Domain whitelist enforcement during crawl.
+- Broken-link logging.
+- Parent page capture.
+- Basic download manager.
+
+Acceptance criteria:
+
+- Non-whitelisted URLs are rejected.
+- Discovered PDFs are stored as document records.
+- Broken links and skipped sources are visible in agent results.
+
+### Phase 5 - DocumentClassificationAgent
+
+Deliverables:
+
+- Rule-based taxonomy classifier.
+- Fiscal-year parser.
+- Language tagger.
+- Priority ranking.
+- Near-duplicate detection.
+- Review queue integration.
+
+Acceptance criteria:
+
+- P1 documents can be listed.
+- Uncertain documents create review items.
+- Classification reason codes are stored.
+
+### Phase 6 - OCRExtractionAgent
+
+Deliverables:
+
+- PDF text extraction.
+- OCR routing.
+- Table extraction.
+- Revenue/expenditure/property-tax extraction schemas.
+- Unit normalization.
+- Confidence scoring.
+
+Acceptance criteria:
+
+- Extracted facts include page-level evidence.
+- Low-confidence records create review items.
+- Normalized values preserve raw text.
+
+### Phase 7 - OntologyNormalizationAgent
+
+Deliverables:
+
+- Canonical category mapping.
+- Mapping log.
+- Fiscal-year normalization.
+- Review workflow for uncertain mappings.
+
+Acceptance criteria:
+
+- Raw labels are preserved.
+- Uncertain mappings are not silently merged.
+- Mappings work across more than one city.
+
+### Phase 8 - FiscalAnalysisAgent
+
+Deliverables:
+
+- Core fiscal metrics.
+- Property tax DCB analysis.
+- Fiscal stress red flags.
+- Evidence traces for formulas.
+
+Acceptance criteria:
+
+- Metrics can be traced to source pages.
+- Red flags include rule, threshold, values, and evidence.
+
+### Phase 9 - GovernanceMappingAgent
+
+Deliverables:
+
+- Agency registry.
+- Service responsibility matrix.
+- Source-backed responsibility claims.
+
+Acceptance criteria:
+
+- Unknown fields are marked `UNKNOWN`.
+- Agency claims cite evidence.
+
+### Phase 10 - SpatialIntelligenceAgent
+
+Deliverables:
+
+- Spatial layer metadata.
+- Ward boundary ingestion.
+- Ward tax/population joins where available.
+- Spatial data-gap review items.
+
+Acceptance criteria:
+
+- Ward geometries load into PostGIS when configured.
+- Missing spatial data does not block non-spatial analysis.
+
+### Phase 11 - AnomalyDetectionAgent
+
+Deliverables:
+
+- Multi-year anomaly rules.
+- Election-year config usage.
+- Anomaly explanation command.
+
+Acceptance criteria:
+
+- Anomalies include rule, threshold, years, values, and evidence.
+
+### Phase 12 - VisualizationAgent
+
+Deliverables:
+
+- Fiscal-health chart pack.
+- Chart metadata.
+- `1200x675` export.
+- Source footers.
+
+Acceptance criteria:
+
+- At least five charts generated when data exists.
+- Charts are evidence-linked.
+
+### Phase 13 - NarrativeSynthesisAgent
+
+Deliverables:
+
+- Substack draft.
+- 20-post X/Twitter thread.
+- Evidence-linked claims.
+- Export bundle.
+
+Acceptance criteria:
+
+- Every quantitative claim has evidence.
+- Critical review gaps stop final export by default.
+
+## Recommended First Real Workflow
+
+Use Varanasi only as the first validation city, not as a product limitation.
 
 ```bash
 muni run all \
@@ -708,117 +903,25 @@ muni run all \
   --years 2019-20:2023-24
 ```
 
-The step-by-step commands should still exist for debugging, partial reruns, and human review, but `muni run all` is the default user-facing path.
+Initial target documents:
 
-## Fiscal Health Workflow Inputs
+- VMC annual budgets for at least three years.
+- Latest CAG Uttar Pradesh local bodies audit report.
+- AMRUT or Smart City utilization report.
+- Property tax DCB record if available.
+- Master plan or development authority document for governance context.
 
-Minimum target documents for a strong city analysis:
+Pilot success criteria:
 
-- Annual municipal budgets for at least three fiscal years.
-- Latest relevant CAG local bodies audit report.
-- Property tax DCB or demand-collection records.
-- AMRUT or Smart City utilization reports if applicable.
-- Master plan or development authority documents for governance context.
-- Ward maps if spatial analysis is required.
-
-Success criteria:
-
-- 100% of final numbers trace to primary-source document pages.
+- 100 percent of final numbers trace to primary-source document pages.
 - 0 secondary sources used as factual evidence.
-- All core fiscal metrics computed for at least 3 years where source data exists.
-- Minimum 5 publication-ready charts when the data supports them.
+- All core fiscal metrics computed for at least 3 years where data exists.
+- Minimum 5 charts when data supports them.
 - 1 Substack-style draft.
-- 1 X/Twitter thread with 20 posts.
+- 1 X/Twitter thread with exactly 20 posts.
 
-## Review and Quality Gates
+## Next Step
 
-Before analysis:
+Before continuing document ingestion, implement Phase 2: the agent runtime foundation.
 
-- P1 documents classified.
-- Duplicate documents resolved.
-- Fiscal years confirmed.
-- Scanned or Hindi-heavy documents routed correctly.
-
-Before visualization:
-
-- Low-confidence values reviewed or excluded.
-- Metric evidence traces complete.
-- Outlier values checked against source pages.
-
-Before narrative export:
-
-- Every number has an evidence link.
-- Every chart has source metadata.
-- Uncertain data is caveated.
-- No secondary-source claims are included as factual evidence.
-
-## Testing Strategy
-
-Unit tests:
-
-- Domain whitelist validation.
-- City profile parsing.
-- SHA-256 duplicate detection.
-- Fiscal year parser.
-- Language tagger.
-- Unit normalization for crore, lakh, Indian comma grouping, blanks, and negatives.
-- Metric formulas.
-- Red flag thresholds.
-
-Integration tests:
-
-- Add a city profile.
-- Register an official source.
-- Ingest a fixture PDF.
-- Classify the fixture.
-- Extract a known table.
-- Normalize records.
-- Compute metrics.
-- Generate a chart with source metadata.
-
-Golden fixtures:
-
-- One text-native English budget PDF.
-- One scanned Hindi budget PDF sample.
-- One CAG report table.
-- One property tax DCB table.
-- One malformed document with missing year.
-
-## Milestone Order
-
-1. Python CLI skeleton, config, migrations, and local storage.
-2. City profiles and official source registry.
-3. Document ingestion with whitelist and hashing.
-4. Classification and priority ranking.
-5. Text extraction and unit normalization.
-6. Financial fact schema and fiscal metrics.
-7. Evidence trace commands.
-8. Chart generation for fiscal metrics.
-9. Governance matrix.
-10. Narrative export.
-11. GIS and advanced anomaly expansion.
-
-## First Sprint
-
-Build the smallest vertical slice:
-
-```bash
-muni init
-muni city add --slug varanasi --name "Varanasi" --state "Uttar Pradesh"
-muni ingest --city varanasi --path ./data/raw/varanasi
-muni classify --city varanasi
-muni extract --city varanasi --doc-id <doc_id>
-muni analyze --city varanasi --years 2022-23
-muni evidence show --metric own_source_revenue_ratio --city varanasi --year 2022-23
-```
-
-Sprint output:
-
-- One city profile.
-- One ingested PDF.
-- One classified document.
-- One extracted revenue table.
-- One normalized fiscal metric.
-- One evidence trace proving where the number came from.
-
-This validates the core promise before expanding into crawling, GIS, visualizations, and narrative generation.
+This keeps the code aligned with `project.md`: a municipal intelligence agent system controlled by a CLI, not a CLI pipeline that later tries to retrofit agents.

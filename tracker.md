@@ -8,10 +8,10 @@ This tracker should be updated whenever meaningful work is completed, blocked, o
 
 ## Current State
 
-- Project status: Phase 1 city profiles and source registry complete; Phase 2 not started.
+- Project status: Phase 2 agent runtime foundation complete; Phase 3 not started.
 - Primary implementation plan: `plan.md`.
 - Architecture source document: `project.md`.
-- Current product direction: city-agnostic Python CLI.
+- Current product direction: city-agnostic municipal intelligence agent system with a Python CLI control surface.
 - Default user-facing command: `muni run all`.
 - Starter example city: Varanasi only as an example, not a product limitation.
 - Git status at tracker creation: clean after commit `adf3e93`.
@@ -29,6 +29,7 @@ This tracker should be updated whenever meaningful work is completed, blocked, o
 - Require primary-source traceability for every numeric fact.
 - Treat low-confidence extraction as a human-review item before final narrative export.
 - Provide both step-by-step commands and one full workflow command.
+- Agents are now first-class architecture objects. The CLI should call agents or workflows; it should not become the core business-logic layer.
 
 ## CLI Direction
 
@@ -119,7 +120,28 @@ Acceptance checkpoint:
 - [x] Non-whitelisted source domains are rejected.
 - [x] Official sources are linked to city profiles.
 
-### Phase 2 - Document Discovery and Ingestion
+### Phase 2 - Agent Runtime Foundation
+
+- [x] Add `muni/agents/base.py`.
+- [x] Add `muni/agents/context.py`.
+- [x] Add `muni/agents/result.py`.
+- [x] Add `muni/agents/orchestrator.py`.
+- [x] Add all 10 planned agent classes as concrete or placeholder classes.
+- [x] Add shared `AgentContext`.
+- [x] Add shared `AgentResult`.
+- [x] Add agent registry.
+- [x] Wire `muni run all` through the orchestrator.
+- [x] Add per-agent status output.
+- [x] Add tests for orchestrator order and result handling.
+
+Acceptance checkpoint:
+
+- [x] All 10 agent classes exist.
+- [x] Every agent returns an `AgentResult`.
+- [x] `muni run all` executes agents in documented order.
+- [x] Failed or blocked agents are reported clearly.
+
+### Phase 3 - Document Evidence Store and Local Ingestion
 
 - [ ] Add PDF link crawler for registered official sources.
 - [ ] Add manual local ingestion.
@@ -138,7 +160,7 @@ Acceptance checkpoint:
 - [ ] Duplicate documents skipped.
 - [ ] Every document stores source URL, local path, hash, and capture timestamp.
 
-### Phase 3 - Document Classification
+### Phase 4 - Document Classification
 
 - [ ] Add document taxonomy.
 - [ ] Add rule-based classifier.
@@ -156,7 +178,7 @@ Acceptance checkpoint:
 - [ ] Uncertain classifications enter review queue.
 - [ ] Hindi/scanned documents are routed to OCR.
 
-### Phase 4 - OCR and Structured Extraction
+### Phase 5 - OCR and Structured Extraction
 
 - [ ] Add text-native PDF extraction with `pdfplumber` / `pypdf`.
 - [ ] Add scanned PDF OCR with Tesseract `eng+hin`.
@@ -180,7 +202,7 @@ Acceptance checkpoint:
 - [ ] Low-confidence OCR results enter review queue.
 - [ ] No extracted number is stored without source reference.
 
-### Phase 5 - Ontology and Normalization
+### Phase 6 - Ontology and Normalization
 
 - [ ] Add canonical municipal categories.
 - [ ] Add raw budget head mapping.
@@ -197,7 +219,7 @@ Acceptance checkpoint:
 - [ ] Uncertain mappings are not silently merged.
 - [ ] Same ontology works across multiple cities.
 
-### Phase 6 - Fiscal Analysis Engine
+### Phase 7 - Fiscal Analysis Engine
 
 - [ ] Add Own Source Revenue Ratio.
 - [ ] Add Property Tax Collection Efficiency.
@@ -221,7 +243,7 @@ Acceptance checkpoint:
 - [ ] Formula inputs are visible through evidence commands.
 - [ ] Red flags are generated from configured thresholds.
 
-### Phase 7 - Governance Mapping
+### Phase 8 - Governance Mapping
 
 - [ ] Add city-specific agency registry.
 - [ ] Add service responsibility matrix.
@@ -235,7 +257,7 @@ Acceptance checkpoint:
 - [ ] Unknown responsibility fields are marked `UNKNOWN`, not guessed.
 - [ ] Agency names come from city config and discovered documents.
 
-### Phase 8 - GIS and Spatial Intelligence
+### Phase 9 - GIS and Spatial Intelligence
 
 - [ ] Add PostGIS spatial layer model.
 - [ ] Add ward boundary ingestion.
@@ -252,7 +274,7 @@ Acceptance checkpoint:
 - [ ] Spatial source metadata is preserved.
 - [ ] Missing ward-level tax data creates a review/data-gap item.
 
-### Phase 9 - Trend and Anomaly Detection
+### Phase 10 - Trend and Anomaly Detection
 
 - [ ] Add pre-election capex spike rule.
 - [ ] Add property tax plateau rule.
@@ -271,7 +293,7 @@ Acceptance checkpoint:
 - [ ] Each anomaly includes rule, years, metric values, threshold, and evidence.
 - [ ] Election rules use config, not hard-coded dates.
 
-### Phase 10 - Visualization
+### Phase 11 - Visualization
 
 - [ ] Add revenue Sankey chart.
 - [ ] Add revenue stacked bar chart.
@@ -292,7 +314,7 @@ Acceptance checkpoint:
 - [ ] No chart uses more than five data series.
 - [ ] Red/green-only palettes are avoided.
 
-### Phase 11 - Narrative Synthesis
+### Phase 12 - Narrative Synthesis
 
 - [ ] Add Substack markdown draft generator.
 - [ ] Add 20-post Twitter thread generator.
@@ -315,10 +337,10 @@ Acceptance checkpoint:
 - [ ] Support first-time flags: `--name`, `--state`, `--municipal-url`.
 - [ ] Create city profile if missing.
 - [ ] Register default national sources if missing.
-- [ ] Run stages in documented order.
+- [x] Run stages in documented order.
 - [ ] Stop before narrative export if critical review items remain.
 - [ ] Add `--allow-review-gaps`.
-- [ ] Print stage-by-stage summary.
+- [x] Print stage-by-stage summary.
 - [ ] Persist failed stage details for resume.
 - [ ] Add rerun/resume behavior.
 
@@ -334,6 +356,9 @@ Acceptance checkpoint:
 - [ ] Red flag threshold tests.
 - [x] Add-city integration test.
 - [x] Register-source integration test.
+- [x] Agent result validation test.
+- [x] Orchestrator order and blocked-result test.
+- [x] `muni run all` orchestrator integration test.
 - [ ] Fixture PDF ingestion test.
 - [ ] Fixture classification test.
 - [ ] Fixture table extraction test.
@@ -401,15 +426,34 @@ Acceptance checkpoint:
   - `python3 -m ruff check .`
   - `muni city add --help`
   - `muni sources add --help`
+- Rewrote `plan.md` to correct the architecture:
+  - Agents are now the core system design.
+  - The CLI is explicitly the control surface, not the architecture.
+  - Phase 2 is now Agent Runtime Foundation.
+  - Document ingestion moved after the agent runtime.
+  - Added the 10 named agents, shared `AgentContext`, shared `AgentResult`, orchestration model, evidence chain, and review gates.
+- Implemented Phase 2 agent runtime foundation:
+  - Added `muni/agents/base.py`, `context.py`, `result.py`, and `orchestrator.py`.
+  - Added all 10 named agent classes as first-class placeholder agents.
+  - Added `DEFAULT_AGENT_CLASSES` registry.
+  - Wired `muni run all` through `AgentOrchestrator`.
+  - Added first-time city setup and source registration to `muni run all`.
+  - Added per-agent status table output.
+  - Added tests for invalid agent status, orchestrator order, blocked results, and CLI orchestration.
+- Phase 2 verification passed:
+  - `python3 -m pytest`
+  - `python3 -m ruff check .`
+  - Direct smoke test of `muni run all` through Typer runner.
 
 ## Next Recommended Task
 
-Start Phase 2:
+Start Phase 3:
 
 1. Add document metadata model or file-backed registry for the first ingestion pass.
-2. Implement `muni ingest --city <slug> --path ./data/raw/<slug>` for local PDFs.
-3. Add SHA-256 hashing and duplicate detection.
-4. Add `muni docs list` and `muni docs show`.
-5. Add tests with fixture files before implementing web crawling.
+2. Implement local PDF ingestion under the DocumentDiscoveryAgent/domain service.
+3. Add SHA-256 hashing and exact duplicate detection.
+4. Implement `muni ingest --city <slug> --path ./data/raw/<slug>`.
+5. Add `muni docs list` and `muni docs show`.
+6. Add fixture-file tests before implementing web crawling.
 
-Do not start OCR or analysis until local ingestion, hashing, and document inspection are working.
+Keep ingestion behind the agent architecture: CLI commands should call an agent or agent-owned service, not isolated one-off functions.

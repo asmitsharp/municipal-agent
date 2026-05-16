@@ -142,3 +142,34 @@ def test_sources_add_list_and_domain_rejection(tmp_path, monkeypatch):
     )
     assert reject_result.exit_code == 1
     assert "not whitelisted" in reject_result.output
+
+
+def test_run_all_executes_agent_orchestrator(tmp_path, monkeypatch):
+    import muni.config as config
+
+    monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "all",
+            "--city",
+            "lucknow",
+            "--name",
+            "Lucknow",
+            "--state",
+            "Uttar Pradesh",
+            "--municipal-url",
+            "https://lmc.up.nic.in",
+            "--years",
+            "2019-20:2023-24",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Agent workflow:" in result.output
+    assert "document_discovery" in result.output
+    assert "document_classification" in result.output
+    assert "narrative_synthesis" in result.output
+    assert (tmp_path / "configs" / "cities" / "lucknow.yaml").exists()
